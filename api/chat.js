@@ -1,44 +1,49 @@
-import { computeQuote } from "../lib/zip_pricing.js";
-
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { name, email, phone, service, zip, sqft } = req.body || {};
+    const { name = "", service = "", zip = "", sqft = 0 } = req.body || {};
+    const nSqft = Number(sqft) || 0;
 
-    // 1) Compute quote via your ZIP pricing engine
-    const quote = await computeQuote({
-      service: String(service || ""),
-      zip: String(zip || ""),
-      sqft: Number(sqft || 0),
-      extras: []
-    });
+    // Super-simple inline pricing so nothing can hang:
+    // (interior paint baseline)
+    const baseRate = 1.9;
+    const materialsPct = 0.18;
+    const prepPct = 0.12;
+    const taxRate = 0.07;
+    const minJob = 350;
 
-    // 2) Build a simple human-readable reply
-    const lines = (quote.lineItems || [])
-      .map(li => `• ${li.label}: $${Number(li.amount).toFixed(2)}`)
-      .join("\n");
+    const labor = baseRate * nSqft;
+    const materials = baseRate * materialsPct * nSqft;
+    const prep = (labor + materials) * prepPct;
+    let subtotal = labor + materials + prep;
+
+    if (subtotal < minJob) subtotal = minJob;
+    const tax = +(subtotal * taxRate).toFixed(2);
+    const total = +(subtotal + tax).toFixed(2);
+
+    const lines = [
+      `• ${service || "Interior paint"} — ${nSqft} ft² @ ZIP ${zip}: $${(labor + materials + prep).toFixed(2)}`
+    ].join("\n");
 
     const msg =
 `Thanks ${name || ""}! Here’s your instant quote:
 
 Service: ${service || "-"}
 ZIP: ${zip || "-"}
-Sqft: ${sqft || "-"}
+Sqft: ${nSqft || "-"}
 
 ${lines}
 
-Subtotal: $${quote.subtotal.toFixed(2)}
-Tax: $${quote.tax.toFixed(2)}
-Total: $${quote.total.toFixed(2)}
+Subtotal: $${subtotal.toFixed(2)}
+Tax: $${tax.toFixed(2)}
+Total: $${total.toFixed(2)}
 
 Book Now: https://handyfixnow.com/protaskhub-Book-a-pro
-(We’ll also email a copy to you and ProTaskHubsetup@gmail.com.)`;
+(Email sending is disabled for this quick test.)`;
 
-    return res.status(200).json({ reply: msg, quote });
+    return res.status(200).json({ reply: msg, quote: { subtotal, tax, total } });
   } catch (e) {
     return res.status(500).json({ error: e.message || "Server error" });
   }
 }
-
-
