@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>ProTaskHub Instant Quote</title>
+    <style>
+      body { font-family: system-ui, Arial, sans-serif; margin: 24px; background:#fafafa; }
+      .card { max-width: 720px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 14px; box-shadow: 0 6px 20px rgba(0,0,0,.05); background:#fff; }
+      h2 { margin: 0 0 8px 0; }
+      .muted { color: #666; font-size: 12px; }
+      input, textarea, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #ddd; }
+      textarea { min-height: 96px; }
+      button { cursor: pointer; font-weight: 600; background:#0ea5e9; color:#fff; border: none; }
+      pre { white-space: pre-wrap; background: #f8f8f8; padding: 12px; border-radius: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>ProTaskHub — Instant Quote</h2>
+      <form id="chat">
+        <input name="name" placeholder="Your name" required />
+        <input name="email" type="email" placeholder="Your email" required />
+        <input name="phone" placeholder="Phone" required />
+        <input name="service" placeholder="Service (e.g., Interior painting)" required />
+        <input name="zip" placeholder="ZIP code" required />
+        <input name="sqft" type="number" placeholder="Approx. square feet (optional)" />
+        <textarea name="text" placeholder="Describe the job (notes, colors, photos link)"></textarea>
+        <button type="submit">Get Instant Quote</button>
+      </form>
+      <p class="muted">We’ll email your quote and include a “Book Now” link.</p>
+      <pre id="out"></pre>
+    </div>
+
+    <script>
+      const form = document.getElementById("chat");
+      const out = document.getElementById("out");
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        out.textContent = "Working…";
+        const body = Object.fromEntries(new FormData(form).entries());
+        if (body.sqft) body.sqft = Number(body.sqft);
+        const r = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        out.textContent = j.reply || JSON.stringify(j, null, 2);
+      });
+    </script>
+  </body>
+</html>

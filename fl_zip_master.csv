@@ -1,0 +1,4 @@
+zip,city,county,msa,state,labor_index,materials_index,travel_fee,min_job
+33428,Boca Raton,PalmBeach,Miami-FortLauderdale-WestPalm,FL,1.14,1.05,15,350
+33101,Miami,MiamiDade,Miami-FortLauderdale-WestPalm,FL,1.20,1.07,20,350
+33301,Fort Lauderdale,Broward,Miami-FortLauderdale-WestPalm,FL,1.17,1.06,10,350
