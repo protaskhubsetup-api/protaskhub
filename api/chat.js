@@ -1,47 +1,196 @@
-// api/chat.js — Multilingual assistant with ZIP pricing, safe fallbacks
+// api/chat.js — ProTaskHub Instant Quote (multilingual + SendGrid email + safe fallbacks)
 
 import OpenAI from "openai";
 
+// ---------- CONFIG ----------
 const BOOKING_URL = "https://handyfixnow.com/protaskhub-Book-a-pro";
-const OPENAI_MODEL = "gpt-4.1";
+const OPENAI_MODEL = "gpt-4.1";           // change to a model you have if needed, e.g. "gpt-4o-mini"
 const OPENAI_TIMEOUT_MS = 20000;
 
+// ---------- DYNAMIC SENDGRID (only loads if key exists) ----------
 let sendgrid = null;
+const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || ""; // MUST be a verified sender in SendGrid
+const FROM_NAME  = process.env.SENDGRID_FROM_NAME  || "ProTaskHub Quotes";
+
 if (process.env.SENDGRID_API_KEY) {
   try {
     sendgrid = await import("@sendgrid/mail");
     sendgrid.default.setApiKey(process.env.SENDGRID_API_KEY);
-  } catch (_) {}
+  } catch (_) {
+    // ignore; we'll stub-send below
+  }
 }
 
-async function sendQuoteEmail({ to, quote, lang, bookingUrl }) {
-  const business = "ProTaskHubsetup@gmail.com";
-  const subject =
-    (lang || "").toLowerCase().startsWith("es") ? "Tu presupuesto de ProTaskHub" :
-    (lang || "").toLowerCase().startsWith("ht") ? "Estimasyon ProTaskHub ou" :
-    "Your ProTaskHub Quote";
+// ---------- UTILITIES ----------
+function currency(n) {
+  return `$${Number(n || 0).toFixed(2)}`;
+}
 
-  const bodyText = [
-    `Quote total: $${Number(quote?.total ?? 0).toFixed(2)}`,
-    ...(quote?.lineItems || []).map(li => `- ${li.label}: $${Number(li.amount).toFixed(2)}`),
+function detectLang({ service = "", text = "" }) {
+  const s = `${service} ${text}`.toLowerCase();
+  const esHits = ["pint", "baño", "cocina", "techo", "pared", "pies", "cuadrados", "color", "yeso"];
+  const htHits = ["wi", "non", "penti", "plonbri", "kay", "twalèt", "met", "travay"];
+  if (esHits.some(w => s.includes(w))) return "es";
+  if (htHits.some(w => s.includes(w))) return "ht";
+  return "en";
+}
+
+function plainReply({ lang, name, service, zip, sqft, quote }) {
+  const lines = (quote.lineItems || [])
+    .map(li => `• ${li.label}: ${currency(li.amount)}`)
+    .join("\n");
+
+  if (lang === "es") {
+    return (
+`¡Gracias ${name || ""}! Aquí tienes tu presupuesto instantáneo:
+
+Servicio: ${service || "-"}
+ZIP: ${zip || "-"}
+Pies²/Cantidad: ${sqft || "-"}
+
+${lines}
+
+Subtotal: ${currency(quote.subtotal)}
+Impuestos: ${currency(quote.tax)}
+Total: ${currency(quote.total)}
+
+Reservar ahora: ${BOOKING_URL}`
+    );
+  }
+  if (lang === "ht") {
+    return (
+`Mèsi ${name || ""}! Men estimasyon w lan:
+
+Sèvis: ${service || "-"}
+ZIP: ${zip || "-"}
+Pye kare/Kantite: ${sqft || "-"}
+
+${lines}
+
+Sou-total: ${currency(quote.subtotal)}
+Taks: ${currency(quote.tax)}
+Total: ${currency(quote.total)}
+
+Rezève kounye a: ${BOOKING_URL}`
+    );
+  }
+  return (
+`Thanks ${name || ""}! Here’s your instant quote:
+
+Service: ${service || "-"}
+ZIP: ${zip || "-"}
+Sqft/Qty: ${sqft || "-"}
+
+${lines}
+
+Subtotal: ${currency(quote.subtotal)}
+Tax: ${currency(quote.tax)}
+Total: ${currency(quote.total)}
+
+Book Now: ${BOOKING_URL}`
+  );
+}
+
+// ---------- EMAIL (HTML + text). Never blocks the response ----------
+function emailSubject(lang = "en") {
+  const L = (lang || "en").toLowerCase();
+  if (L.startsWith("es")) return "Tu presupuesto de ProTaskHub — Listo para reservar";
+  if (L.startsWith("ht")) return "Estimasyon ProTaskHub ou — Pare pou rezève";
+  return "Your ProTaskHub Quote — Ready to Book";
+}
+
+function buildEmailHTML({ lang = "en", quote, bookingUrl, customerName = "", service = "", zip = "", sqft = "" }) {
+  const items = (quote?.lineItems || [])
+    .map(li => `<tr><td style="padding:8px 0;color:#111;">${li.label}</td><td style="text-align:right;color:#111;">${currency(li.amount)}</td></tr>`)
+    .join("");
+
+  const hi =
+    lang === "es" ? `Hola ${customerName || ""},` :
+    lang === "ht" ? `Bonjou ${customerName || ""},` :
+    `Hi ${customerName || ""},`;
+
+  const subtitle =
+    lang === "es" ? "Presupuesto instantáneo para tu proyecto" :
+    lang === "ht" ? "Estimasyon imedya pou pwojè ou" :
+    "Instant estimate for your project";
+
+  const btn =
+    lang === "es" ? "Reservar ahora" :
+    lang === "ht" ? "Rezève kounye a" :
+    "Book Now";
+
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:24px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;padding:24px;">
+          <tr><td style="text-align:center;padding-bottom:8px;">
+            <div style="font-size:20px;font-weight:700;color:#111;">ProTaskHub Quote</div>
+            <div style="font-size:13px;color:#666;">${subtitle}</div>
+          </td></tr>
+          <tr><td style="font-size:14px;color:#111;padding:12px 0;">${hi}
+            <br/>Here’s your instant quote. You can book immediately with the button below.
+          </td></tr>
+          <tr><td style="background:#f2f3f7;padding:12px;border-radius:8px;font-size:13px;color:#333;">
+            <div><strong>Service:</strong> ${service || "-"}</div>
+            <div><strong>ZIP:</strong> ${zip || "-"}</div>
+            <div><strong>Sqft/Qty:</strong> ${sqft || "-"}</div>
+          </td></tr>
+          <tr><td style="height:12px;"></td></tr>
+          <tr><td>
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+              ${items}
+              <tr><td style="border-top:1px solid #eee;padding-top:8px;color:#111;">Subtotal</td><td style="text-align:right;border-top:1px solid #eee;padding-top:8px;color:#111;">${currency(quote?.subtotal)}</td></tr>
+              <tr><td style="color:#111;">Tax</td><td style="text-align:right;color:#111;">${currency(quote?.tax)}</td></tr>
+              <tr><td style="font-weight:700;color:#111;">Total</td><td style="text-align:right;font-weight:700;color:#111;">${currency(quote?.total)}</td></tr>
+            </table>
+          </td></tr>
+          <tr><td style="height:18px;"></td></tr>
+          <tr><td align="center">
+            <a href="${bookingUrl}" style="background:#0ea5e9;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;display:inline-block;">
+              ${btn}
+            </a>
+          </td></tr>
+          <tr><td style="height:8px;"></td></tr>
+          <tr><td style="font-size:12px;color:#666;text-align:center;">
+            If you have photos or notes, reply to this email and we’ll fine-tune the quote.
+          </td></tr>
+        </table>
+        <div style="font-size:11px;color:#9aa1ac;padding:12px;">ProTaskHub • HandyFixNow</div>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+async function sendQuoteEmail({ to, quote, lang, bookingUrl, customerName, service, zip, sqft }) {
+  const businessCopy = "ProTaskHubsetup@gmail.com";
+  const subject = emailSubject(lang);
+  const text = [
+    `Quote total: ${currency(quote?.total)}`,
+    ...(quote?.lineItems || []).map(li => `- ${li.label}: ${currency(li.amount)}`),
     "",
     `Book Now: ${bookingUrl}`
   ].join("\n");
+  const html = buildEmailHTML({ lang, quote, bookingUrl, customerName, service, zip, sqft });
 
-  if (sendgrid) {
-    try {
-      await sendgrid.default.send([
-        { to, from: "no-reply@protaskhub.ai", subject, text: bodyText },
-        { to: business, from: "no-reply@protaskhub.ai", subject: `[COPY] ${subject}`, text: bodyText }
-      ]);
-      return { ok: true, provider: "sendgrid", sentTo: [to, business] };
-    } catch (e) {
-      return { ok: false, provider: "sendgrid", error: String(e?.message || e) };
-    }
+  // If SendGrid isn't available or sender isn't configured, don't fail — return ok stub
+  if (!sendgrid || !FROM_EMAIL) return { ok: true, provider: "none", note: "No SENDGRID_API_KEY or SENDGRID_FROM_EMAIL set" };
+
+  try {
+    const from = { email: FROM_EMAIL, name: FROM_NAME };
+    await sendgrid.default.send([
+      { to,        from, subject, text, html },
+      { to: businessCopy, from, subject: `[COPY] ${subject}`, text, html }
+    ]);
+    return { ok: true, provider: "sendgrid", sentTo: [to, businessCopy] };
+  } catch (e) {
+    return { ok: false, provider: "sendgrid", error: String(e?.message || e) };
   }
-  return { ok: true, provider: "none", sentTo: [to, business] };
 }
 
+// ---------- PRICING (real engine with safe fallback) ----------
 async function fallbackQuote({ service, zip, sqft }) {
   const n = Number(sqft) || 0;
   const baseRate = 1.9, materialsPct = 0.18, prepPct = 0.12, taxRate = 0.07, minJob = 350;
@@ -71,127 +220,76 @@ async function computeQuoteSafe(args) {
   }
 }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// ---------- OPTIONAL OpenAI polish (never blocks) ----------
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
-const SYSTEM_PROMPT = `
-You are the official ProTaskHub AI Assistant.
-- Detect the user's language (English, Spanish, or Haitian Creole) and reply in that language.
-- Collect service, ZIP, sqft/details, name, phone, email.
-- Use tools to compute a quote, then (optionally) send an email confirmation.
-- ALWAYS include: Book Now → ${BOOKING_URL}
-- Be concise and mobile-friendly with bullet points for totals.
-`;
-
-const tools = [
-  {
-    type: "function",
-    function: {
-      name: "compute_quote",
-      description: "Generate an instant quote for a service using job details.",
-      parameters: {
-        type: "object",
-        properties: {
-          service: { type: "string" },
-          zip: { type: "string" },
-          sqft: { type: "number" },
-          extras: { type: "array", items: { type: "string" } }
-        },
-        required: ["service", "zip"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "send_quote_email",
-      description: "Email the final quote to the customer and ProTaskHub.",
-      parameters: {
-        type: "object",
-        properties: {
-          to: { type: "string" },
-          quote: { type: "object" },
-          lang: { type: "string" },
-          bookingUrl: { type: "string" }
-        },
-        required: ["to", "quote", "bookingUrl"]
-      }
-    }
-  }
-];
-
-async function runWithTimeout(promise, ms) {
+async function withTimeout(promise, ms) {
   let t;
-  const timer = new Promise((_, rej) => (t = setTimeout(() => rej(new Error("OpenAI timeout")), ms)));
+  const timer = new Promise((_, rej) => (t = setTimeout(() => rej(new Error("timeout")), ms)));
   try { return await Promise.race([promise, timer]); }
   finally { clearTimeout(t); }
 }
 
+// ---------- HANDLER ----------
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const user = req.body || {};
-    const { name = "", email = "", phone = "", service = "", zip = "", sqft = 0 } = user;
+    const { name = "", email = "", phone = "", service = "", zip = "", sqft = 0, text = "" } = req.body || {};
 
-    const messages = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify({ name, email, phone, service, zip, sqft, text: user.text || "" }) }
-    ];
+    // 1) Compute quote
+    const quote = await computeQuoteSafe({
+      service: String(service),
+      zip: String(zip),
+      sqft: Number(sqft) || 0,
+      extras: []
+    });
 
-    // Ask OpenAI; if anything goes wrong, fall back to deterministic pricing reply
-    let r;
-    try {
-      r = await runWithTimeout(
-        openai.chat.completions.create({ model: OPENAI_MODEL, messages, tools, tool_choice: "auto" }),
-        OPENAI_TIMEOUT_MS
-      );
-    } catch {
-      const quote = await computeQuoteSafe({ service, zip: String(zip), sqft: Number(sqft) || 0, extras: [] });
-      const lines = (quote.lineItems || []).map(li => `• ${li.label}: $${Number(li.amount).toFixed(2)}`).join("\n");
-      const text = `Here is your instant quote:\n\n${lines}\n\nSubtotal: $${Number(quote.subtotal).toFixed(2)}\nTax: $${Number(quote.tax).toFixed(2)}\nTotal: $${Number(quote.total).toFixed(2)}\n\nBook Now: ${BOOKING_URL}`;
-      return res.status(200).json({ reply: text, quote, meta: { mode: "fallback" } });
+    // 2) Pick language & build reply (plain)
+    const lang = detectLang({ service, text });
+    let reply = plainReply({ lang, name, service, zip, sqft, quote });
+
+    // 3) Try to ask OpenAI to polish the text (if configured). If it fails, keep plain reply.
+    if (openai) {
+      try {
+        const sys =
+`You are ProTaskHub's assistant. Rewrite the user's draft into a crisp, friendly message in the user's language (English/Spanish/Haitian Creole).
+Always include the Book Now link: ${BOOKING_URL}. Keep bullets for line items and totals.`;
+        const userDraft = reply;
+        const r = await withTimeout(
+          openai.chat.completions.create({
+            model: OPENAI_MODEL,
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: userDraft }
+            ]
+          }),
+          OPENAI_TIMEOUT_MS
+        );
+        const polished = r?.choices?.[0]?.message?.content;
+        if (polished) reply = polished;
+      } catch (_) { /* keep plain reply */ }
     }
 
-    // Tool loop
-    while (r.choices?.[0]?.message?.tool_calls?.length) {
-      const call = r.choices[0].message.tool_calls[0];
-      const args = call.function?.arguments ? JSON.parse(call.function.arguments) : {};
-      let result;
-
-      if (call.function.name === "compute_quote") {
-        result = await computeQuoteSafe(args);
-      } else if (call.function.name === "send_quote_email") {
-        result = await sendQuoteEmail(args);
-      } else {
-        result = { error: "Unknown tool" };
-      }
-
-      r = await runWithTimeout(
-        openai.chat.completions.create({
-          model: OPENAI_MODEL,
-          messages: [
-            ...messages,
-            r.choices[0].message,
-            { role: "tool", tool_call_id: call.id, content: JSON.stringify(result) }
-          ],
-          tools,
-          tool_choice: "auto"
-        }),
-        OPENAI_TIMEOUT_MS
-      );
+    // 4) Fire-and-forget email (only if email present). Never block the response.
+    if (email) {
+      sendQuoteEmail({
+        to: email,
+        quote,
+        lang,
+        bookingUrl: BOOKING_URL,
+        customerName: name,
+        service, zip, sqft
+      }).catch(() => {});
     }
 
-    res.status(200).json({ reply: r.choices?.[0]?.message?.content ?? "OK" });
+    // 5) Respond to client immediately
+    return res.status(200).json({ reply, quote, meta: { lang } });
   } catch (e) {
-    // Panic fallback; never hang
-    try {
-      const { service = "", zip = "", sqft = 0 } = req.body || {};
-      const quote = await fallbackQuote({ service, zip, sqft });
-      const lines = (quote.lineItems || []).map(li => `• ${li.label}: $${Number(li.amount).toFixed(2)}`).join("\n");
-      const text = `Here is your instant quote:\n\n${lines}\n\nSubtotal: $${Number(quote.subtotal).toFixed(2)}\nTax: $${Number(quote.tax).toFixed(2)}\nTotal: $${Number(quote.total).toFixed(2)}\n\nBook Now: ${BOOKING_URL}`;
-      return res.status(200).json({ reply: text, quote, meta: { mode: "panic-fallback", error: String(e?.message || e) } });
-    } catch {
-      return res.status(500).json({ error: e.message || "Server error" });
-    }
+    // Panic fallback
+    return res.status(200).json({
+      reply: "Your quote is ready, but there was an internal error formatting it. Please try again.",
+      error: String(e?.message || e)
+    });
   }
 }
