@@ -1,13 +1,13 @@
-// api/chat.js — ProTaskHub Instant Quote (multilingual + SendGrid email + safe fallbacks)
+// api/chat.js — ProTaskHub Instant Quote (multilingual + SendGrid HTML email + safe fallbacks)
 
 import OpenAI from "openai";
 
 // ---------- CONFIG ----------
 const BOOKING_URL = "https://handyfixnow.com/protaskhub-Book-a-pro";
-const OPENAI_MODEL = "gpt-4.1";           // change to a model you have if needed, e.g. "gpt-4o-mini"
+const OPENAI_MODEL = "gpt-4.1";           // change if needed (e.g., "gpt-4o-mini")
 const OPENAI_TIMEOUT_MS = 20000;
 
-// ---------- DYNAMIC SENDGRID (only loads if key exists) ----------
+// ---------- DYNAMIC SENDGRID ----------
 let sendgrid = null;
 const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || ""; // MUST be a verified sender in SendGrid
 const FROM_NAME  = process.env.SENDGRID_FROM_NAME  || "ProTaskHub Quotes";
@@ -22,23 +22,19 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 // ---------- UTILITIES ----------
-function currency(n) {
-  return `$${Number(n || 0).toFixed(2)}`;
-}
+function money(n) { return `$${Number(n || 0).toFixed(2)}`; }
 
 function detectLang({ service = "", text = "" }) {
   const s = `${service} ${text}`.toLowerCase();
-  const esHits = ["pint", "baño", "cocina", "techo", "pared", "pies", "cuadrados", "color", "yeso"];
-  const htHits = ["wi", "non", "penti", "plonbri", "kay", "twalèt", "met", "travay"];
-  if (esHits.some(w => s.includes(w))) return "es";
-  if (htHits.some(w => s.includes(w))) return "ht";
+  const es = ["pint", "baño", "cocina", "techo", "pared", "pies", "cuadrados", "color", "yeso", "inodoro"];
+  const ht = ["wi", "non", "penti", "plonbri", "kay", "twalèt", "met", "travay"];
+  if (es.some(w => s.includes(w))) return "es";
+  if (ht.some(w => s.includes(w))) return "ht";
   return "en";
 }
 
 function plainReply({ lang, name, service, zip, sqft, quote }) {
-  const lines = (quote.lineItems || [])
-    .map(li => `• ${li.label}: ${currency(li.amount)}`)
-    .join("\n");
+  const lines = (quote.lineItems || []).map(li => `• ${li.label}: ${money(li.amount)}`).join("\n");
 
   if (lang === "es") {
     return (
@@ -50,9 +46,9 @@ Pies²/Cantidad: ${sqft || "-"}
 
 ${lines}
 
-Subtotal: ${currency(quote.subtotal)}
-Impuestos: ${currency(quote.tax)}
-Total: ${currency(quote.total)}
+Subtotal: ${money(quote.subtotal)}
+Impuestos: ${money(quote.tax)}
+Total: ${money(quote.total)}
 
 Reservar ahora: ${BOOKING_URL}`
     );
@@ -67,9 +63,9 @@ Pye kare/Kantite: ${sqft || "-"}
 
 ${lines}
 
-Sou-total: ${currency(quote.subtotal)}
-Taks: ${currency(quote.tax)}
-Total: ${currency(quote.total)}
+Sou-total: ${money(quote.subtotal)}
+Taks: ${money(quote.tax)}
+Total: ${money(quote.total)}
 
 Rezève kounye a: ${BOOKING_URL}`
     );
@@ -83,9 +79,9 @@ Sqft/Qty: ${sqft || "-"}
 
 ${lines}
 
-Subtotal: ${currency(quote.subtotal)}
-Tax: ${currency(quote.tax)}
-Total: ${currency(quote.total)}
+Subtotal: ${money(quote.subtotal)}
+Tax: ${money(quote.tax)}
+Total: ${money(quote.total)}
 
 Book Now: ${BOOKING_URL}`
   );
@@ -101,7 +97,7 @@ function emailSubject(lang = "en") {
 
 function buildEmailHTML({ lang = "en", quote, bookingUrl, customerName = "", service = "", zip = "", sqft = "" }) {
   const items = (quote?.lineItems || [])
-    .map(li => `<tr><td style="padding:8px 0;color:#111;">${li.label}</td><td style="text-align:right;color:#111;">${currency(li.amount)}</td></tr>`)
+    .map(li => `<tr><td style="padding:8px 0;color:#111;">${li.label}</td><td style="text-align:right;color:#111;">${money(li.amount)}</td></tr>`)
     .join("");
 
   const hi =
@@ -141,9 +137,9 @@ function buildEmailHTML({ lang = "en", quote, bookingUrl, customerName = "", ser
           <tr><td>
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
               ${items}
-              <tr><td style="border-top:1px solid #eee;padding-top:8px;color:#111;">Subtotal</td><td style="text-align:right;border-top:1px solid #eee;padding-top:8px;color:#111;">${currency(quote?.subtotal)}</td></tr>
-              <tr><td style="color:#111;">Tax</td><td style="text-align:right;color:#111;">${currency(quote?.tax)}</td></tr>
-              <tr><td style="font-weight:700;color:#111;">Total</td><td style="text-align:right;font-weight:700;color:#111;">${currency(quote?.total)}</td></tr>
+              <tr><td style="border-top:1px solid #eee;padding-top:8px;color:#111;">Subtotal</td><td style="text-align:right;border-top:1px solid #eee;padding-top:8px;color:#111;">${money(quote?.subtotal)}</td></tr>
+              <tr><td style="color:#111;">Tax</td><td style="text-align:right;color:#111;">${money(quote?.tax)}</td></tr>
+              <tr><td style="font-weight:700;color:#111;">Total</td><td style="text-align:right;font-weight:700;color:#111;">${money(quote?.total)}</td></tr>
             </table>
           </td></tr>
           <tr><td style="height:18px;"></td></tr>
@@ -165,26 +161,25 @@ function buildEmailHTML({ lang = "en", quote, bookingUrl, customerName = "", ser
 }
 
 async function sendQuoteEmail({ to, quote, lang, bookingUrl, customerName, service, zip, sqft }) {
-  const businessCopy = "ProTaskHubsetup@gmail.com";
+  const copy = "ProTaskHubsetup@gmail.com";
   const subject = emailSubject(lang);
   const text = [
-    `Quote total: ${currency(quote?.total)}`,
-    ...(quote?.lineItems || []).map(li => `- ${li.label}: ${currency(li.amount)}`),
+    `Quote total: ${money(quote?.total)}`,
+    ...(quote?.lineItems || []).map(li => `- ${li.label}: ${money(li.amount)}`),
     "",
     `Book Now: ${bookingUrl}`
   ].join("\n");
   const html = buildEmailHTML({ lang, quote, bookingUrl, customerName, service, zip, sqft });
 
-  // If SendGrid isn't available or sender isn't configured, don't fail — return ok stub
-  if (!sendgrid || !FROM_EMAIL) return { ok: true, provider: "none", note: "No SENDGRID_API_KEY or SENDGRID_FROM_EMAIL set" };
+  if (!sendgrid || !FROM_EMAIL) return { ok: true, provider: "none", note: "SendGrid not configured" };
 
   try {
     const from = { email: FROM_EMAIL, name: FROM_NAME };
     await sendgrid.default.send([
-      { to,        from, subject, text, html },
-      { to: businessCopy, from, subject: `[COPY] ${subject}`, text, html }
+      { to,   from, subject, text, html },
+      { to: copy, from, subject: `[COPY] ${subject}`, text, html }
     ]);
-    return { ok: true, provider: "sendgrid", sentTo: [to, businessCopy] };
+    return { ok: true, provider: "sendgrid", sentTo: [to, copy] };
   } catch (e) {
     return { ok: false, provider: "sendgrid", error: String(e?.message || e) };
   }
@@ -237,7 +232,7 @@ export default async function handler(req, res) {
   try {
     const { name = "", email = "", phone = "", service = "", zip = "", sqft = 0, text = "" } = req.body || {};
 
-    // 1) Compute quote
+    // 1) Quote
     const quote = await computeQuoteSafe({
       service: String(service),
       zip: String(zip),
@@ -245,33 +240,24 @@ export default async function handler(req, res) {
       extras: []
     });
 
-    // 2) Pick language & build reply (plain)
+    // 2) Language + reply
     const lang = detectLang({ service, text });
     let reply = plainReply({ lang, name, service, zip, sqft, quote });
 
-    // 3) Try to ask OpenAI to polish the text (if configured). If it fails, keep plain reply.
+    // 3) Optional OpenAI polish
     if (openai) {
       try {
-        const sys =
-`You are ProTaskHub's assistant. Rewrite the user's draft into a crisp, friendly message in the user's language (English/Spanish/Haitian Creole).
-Always include the Book Now link: ${BOOKING_URL}. Keep bullets for line items and totals.`;
-        const userDraft = reply;
-        const r = await withTimeout(
-          openai.chat.completions.create({
-            model: OPENAI_MODEL,
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: userDraft }
-            ]
-          }),
-          OPENAI_TIMEOUT_MS
-        );
+        const sys = `You are ProTaskHub's assistant. Rewrite the user's draft into a crisp, friendly message in the user's language (English/Spanish/Haitian Creole). Always include the Book Now link: ${BOOKING_URL}. Keep bullets for line items and totals.`;
+        const r = await withTimeout(openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: [{ role: "system", content: sys }, { role: "user", content: reply }]
+        }), OPENAI_TIMEOUT_MS);
         const polished = r?.choices?.[0]?.message?.content;
         if (polished) reply = polished;
-      } catch (_) { /* keep plain reply */ }
+      } catch { /* keep plain */ }
     }
 
-    // 4) Fire-and-forget email (only if email present). Never block the response.
+    // 4) Fire-and-forget email
     if (email) {
       sendQuoteEmail({
         to: email,
@@ -283,7 +269,7 @@ Always include the Book Now link: ${BOOKING_URL}. Keep bullets for line items an
       }).catch(() => {});
     }
 
-    // 5) Respond to client immediately
+    // 5) Respond
     return res.status(200).json({ reply, quote, meta: { lang } });
   } catch (e) {
     // Panic fallback
