@@ -1,110 +1,39 @@
-{
-  "defaults": {
-    "min_job": 300,
-    "tax_rate": 0.07,
-    "labor_index": 1.0,
-    "materials_index": 1.0
+"services": {
+  "painting_interior": {
+    "unit": "sqft",
+    "base_rate": 1.90,
+    "materials_pct": 0.18,
+    "prep_addon_pct": 0.12,
+    "min_job": 350
   },
-  "rules": {
-    "state:FL": {
-      "labor_index": 1.08,
-      "materials_index": 1.03
-    },
-    "msa:Miami-FortLauderdale-WestPalm": {
-      "labor_index": 1.15,
-      "materials_index": 1.05,
-      "min_job": 350
-    },
-    "county:PalmBeach": {
-      "labor_index": 1.12,
-      "materials_index": 1.04
-    },
-    "county:MiamiDade": {
-      "labor_index": 1.18,
-      "materials_index": 1.07
-    },
-    "county:Broward": {
-      "labor_index": 1.16,
-      "materials_index": 1.06
-    },
-    "zip:33428": {
-      "labor_index": 1.14,
-      "materials_index": 1.05,
-      "travel_fee": 15
-    },
-    "zip:33301": {
-      "labor_index": 1.17,
-      "materials_index": 1.06,
-      "travel_fee": 10
-    },
-    "zip:33101": {
-      "labor_index": 1.2,
-      "materials_index": 1.07,
-      "travel_fee": 20
-    }
+  "painting_exterior": {
+    "unit": "sqft",
+    "base_rate": 2.60,
+    "materials_pct": 0.22,
+    "prep_addon_pct": 0.15,
+    "min_job": 500
   },
-  "services": {
-    "painting_interior": {
-      "unit": "sqft",
-      "base_rate": 1.9,
-      "materials_pct": 0.18,
-      "prep_addon_pct": 0.12,
-      "min_job": 400
-    },
-    "painting_exterior": {
-      "unit": "sqft",
-      "base_rate": 2.5,
-      "materials_pct": 0.2,
-      "prep_addon_pct": 0.15,
-      "min_job": 500
-    },
-    "drywall_repair": {
-      "unit": "each",
-      "tiers": [
-        {
-          "label": "Small patch (\u22646\")",
-          "max_each": 1,
-          "rate": 160
-        },
-        {
-          "label": "Medium patch (\u22641 ft\u00b2)",
-          "max_each": 1,
-          "rate": 240
-        },
-        {
-          "label": "Large patch (\u22644 ft\u00b2)",
-          "max_each": 1,
-          "rate": 360
-        }
-      ],
-      "trip_bundle_discount_pct": 0.1,
-      "min_job": 300
-    },
-    "flooring_install": {
-      "unit": "sqft",
-      "base_rate": 3.85,
-      "materials_pct": 0.1,
-      "min_job": 600
-    }
+  "drywall_repair": {
+    "unit": "each",
+    "tiers": [
+      { "qty": 1, "rate": 200 }
+    ],
+    "trip_bundle_discount_pct": 0.12,
+    "min_job": 300
   },
-  "lookup": {
-    "33428": {
-      "county": "PalmBeach",
-      "msa": "Miami-FortLauderdale-WestPalm",
-      "state": "FL",
-      "city": "Boca Raton"
-    },
-    "33301": {
-      "county": "Broward",
-      "msa": "Miami-FortLauderdale-WestPalm",
-      "state": "FL",
-      "city": "Fort Lauderdale"
-    },
-    "33101": {
-      "county": "MiamiDade",
-      "msa": "Miami-FortLauderdale-WestPalm",
-      "state": "FL",
-      "city": "Miami"
-    }
+  "flooring_install": {
+    "unit": "sqft",
+    "base_rate": 3.50,
+    "materials_pct": 0.10,
+    "prep_addon_pct": 0.08,
+    "min_job": 600
+  },
+  "plumbing_toilet_replace": {
+    "unit": "each",
+    "tiers": [
+      { "qty": 1, "rate": 245 }
+    ],
+    "trip_bundle_discount_pct": 0.12,
+    "min_job": 350
   }
 }
